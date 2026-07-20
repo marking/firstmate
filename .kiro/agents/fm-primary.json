@@ -1,0 +1,18 @@
+{
+  "name": "fm-primary",
+  "description": "Firstmate primary session agent — runs the first mate with turn-end guard and session-start nudge",
+  "hooks": {
+    "agentSpawn": [
+      {
+        "command": "bin/fm-sessionstart-nudge.sh",
+        "timeout_ms": 5000
+      }
+    ],
+    "stop": [
+      {
+        "command": "bin/fm-turnend-guard-kiro.sh",
+        "timeout_ms": 15000
+      }
+    ]
+  }
+}
