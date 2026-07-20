@@ -348,6 +348,13 @@ launch_template() {
     # launch command - it is a Stop-event hook installed below (global hook +
     # per-task pointer), so the template is identical for ship/scout/secondmate.
     grok) printf '%s' 'grok --always-approve __MODELFLAG____EFFORTFLAG__"$(cat __BRIEF__)"' ;;
+    # kiro (Kiro CLI TUI): --trust-all-tools auto-approves every tool use (the
+    # targeted equivalent of claude's --dangerously-skip-permissions). --agent
+    # fm-crew loads the per-worktree agent config that carries the stop hook for
+    # turn-end signaling. kiro's turn-end signal is a stop hook installed in
+    # .kiro/agents/fm-crew.json (see turn-end section below), so the template
+    # is identical for ship/scout/secondmate.
+    kiro) printf '%s' 'kiro-cli chat --trust-all-tools --agent fm-crew __MODELFLAG____EFFORTFLAG__"$(cat __BRIEF__)"' ;;
     *) return 1 ;;
   esac
 }
@@ -435,7 +442,7 @@ model_flag_for_harness() {
   local harness=$1 model=$2
   [ -n "$model" ] && [ "$model" != default ] || return 0
   case "$harness" in
-    claude|codex|opencode|pi|grok)
+    claude|codex|opencode|pi|grok|kiro)
       printf -- '--model %s ' "$(shell_quote "$model")"
       ;;
   esac
@@ -472,6 +479,12 @@ effort_flag_for_harness() {
       # its --thinking flag.
       case "$effort" in
         low|medium|high|xhigh|max) printf -- '--thinking %s ' "$(shell_quote "$effort")" ;;
+      esac
+      ;;
+    kiro)
+      # kiro-cli accepts the full shared effort vocabulary through --effort.
+      case "$effort" in
+        low|medium|high|xhigh|max) printf -- '--effort %s ' "$(shell_quote "$effort")" ;;
       esac
       ;;
     # opencode's interactive `opencode --prompt` launch has a verified --model
@@ -966,6 +979,29 @@ EOF
       printf '{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"%s"}]}]}}\n' "$hook_command" > "$GROK_HOOKS_DIR/fm-turn-end.json"
       printf 'token=%s\n' "${auth_file##*/}" > "$WT/.fm-grok-turnend"
       exclude_path '.fm-grok-turnend'
+      ;;
+    kiro*)
+      # kiro fires a stop hook at every turn boundary (documented in kiro-cli's
+      # hooks system). Unlike grok, kiro loads workspace-local .kiro/agents/
+      # configs automatically when --agent references them, and --trust-all-tools
+      # covers tool execution without a trust gate. The hook lives INSIDE the
+      # worktree as a per-task agent config whose stop hook touches .turn-ended.
+      KIRO_AGENTS_DIR="$WT/.kiro/agents"
+      mkdir -p "$KIRO_AGENTS_DIR"
+      cat > "$KIRO_AGENTS_DIR/fm-crew.json" <<EOF
+{
+  "name": "fm-crew",
+  "description": "Firstmate crewmate agent with turn-end signaling",
+  "hooks": {
+    "stop": [
+      {
+        "command": "touch '$TURNEND'"
+      }
+    ]
+  }
+}
+EOF
+      exclude_path '.kiro/agents/fm-crew.json'
       ;;
   esac
 fi
